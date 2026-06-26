@@ -1,5 +1,8 @@
 import winreg
 import subprocess
+import os
+import shutil
+import time
 
 def get_installed_apps():
     apps = []
@@ -30,7 +33,12 @@ def get_installed_apps():
                         install_loc = ""
                         
                     try:
-                        # الحجم يكون بالـ كيلوبايت في السجل
+                        display_icon = winreg.QueryValueEx(subkey, "DisplayIcon")[0]
+                        display_icon = display_icon.split(',')[0].strip('"')
+                    except OSError:
+                        display_icon = ""
+                        
+                    try:
                         size_kb = winreg.QueryValueEx(subkey, "EstimatedSize")[0]
                         size_mb = size_kb / 1024
                     except OSError:
@@ -41,6 +49,7 @@ def get_installed_apps():
                             "name": name,
                             "uninstall_cmd": uninstall_cmd,
                             "install_location": install_loc,
+                            "display_icon": display_icon,
                             "size_mb": size_mb
                         })
                 except OSError:
@@ -48,13 +57,46 @@ def get_installed_apps():
         except OSError:
             continue
             
-    # إزالة التكرارات بناءً على الاسم
     unique_apps = {app['name']: app for app in apps}.values()
     return sorted(list(unique_apps), key=lambda x: x['name'].lower())
 
-def uninstall_app(uninstall_cmd):
+def uninstall_and_deep_clean(app_data):
+    # 1. تنفيذ أمر الإزالة العادي أولاً
     try:
-        # تنفيذ أمر الإزالة 
-        subprocess.Popen(uninstall_cmd, shell=True)
+        process = subprocess.Popen(app_data['uninstall_cmd'], shell=True)
+        # ننتظر قليلاً ليعمل ملف الإزالة
+        time.sleep(3) 
     except Exception as e:
-        print(f"Error uninstalling: {e}")
+        print(f"Error executing uninstaller: {e}")
+
+    app_name = app_data['name']
+    install_loc = app_data['install_location']
+
+    # 2. تنظيف مسار التثبيت بقوة (إذا كان آمناً ومحدداً)
+    if install_loc and os.path.exists(install_loc):
+        if len(install_loc) > 10 and app_name.split()[0].lower() in install_loc.lower():
+            try:
+                shutil.rmtree(install_loc, ignore_errors=True)
+            except:
+                pass
+
+    # 3. تنظيف الداتا من AppData
+    appdata_paths = [os.environ.get('APPDATA'), os.environ.get('LOCALAPPDATA')]
+    for path in appdata_paths:
+        if path:
+            target_folder = os.path.join(path, app_name.split()[0])
+            if os.path.exists(target_folder) and len(app_name) > 2:
+                try:
+                    shutil.rmtree(target_folder, ignore_errors=True)
+                except:
+                    pass
+
+    # 4. تنظيف اختصارات سطح المكتب
+    desktop = os.path.join(os.environ.get('USERPROFILE', ''), 'Desktop')
+    if os.path.exists(desktop):
+        for file in os.listdir(desktop):
+            if file.endswith('.lnk') and app_name.split()[0].lower() in file.lower():
+                try:
+                    os.remove(os.path.join(desktop, file))
+                except:
+                    pass
