@@ -3,7 +3,7 @@ import os
 
 def check_app_status(install_location):
     if not install_location or not os.path.exists(install_location):
-        return {"active": False, "ram": 0, "pids": []}
+        return {"active": False, "ram": 0.0, "pids": []}
 
     active = False
     total_ram = 0
@@ -21,7 +21,6 @@ def check_app_status(install_location):
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
 
-    # تحويل الرام من بايت إلى ميغابايت
     ram_mb = total_ram / (1024 * 1024)
     return {"active": active, "ram": ram_mb, "pids": pids}
 
@@ -29,6 +28,6 @@ def kill_processes(pids):
     for pid in pids:
         try:
             p = psutil.Process(pid)
-            p.terminate()
+            p.kill() # استخدام kill بدلاً من terminate لفرض الإغلاق الفوري
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
