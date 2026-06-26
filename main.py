@@ -1,6 +1,7 @@
 import sys
 import ctypes
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import Qt
 from ui import MainWindow
 
 def is_admin():
@@ -19,7 +20,18 @@ if __name__ == "__main__":
         run_as_admin()
         sys.exit()
 
+    # تفعيل الدقة العالية للشاشات الحديثة
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
     app = QApplication(sys.argv)
+    
+    # تطبيق خط موحد للتطبيق
+    font = app.font()
+    font.setFamily("Segoe UI")
+    font.setPointSize(10)
+    app.setFont(font)
+
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())
