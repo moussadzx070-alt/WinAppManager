@@ -1,0 +1,36 @@
+Entername: Build Windows EXE
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch: # هذا السطر يضيف زراً في GitHub لتشغيل التجميع يدوياً متى أردت
+
+jobs:
+  build:
+    runs-on: windows-latest # استخدام بيئة ويندوز لتوليد ملف exe متوافق
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11' # يمكنك تعديل الإصدار حسب بايثون الذي تستخدمه
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build with PyInstaller
+      run: |
+        # استخدام onefile لإنتاج ملف exe واحد نظيف، وwindowed لمنع ظهور شاشة الكونسول السوداء
+        pyinstaller --noconfirm --onefile --windowed --icon "resources/icon.ico" --name "WinAppManager" --add-data "resources;resources/" "main.py"
+
+    - name: Upload EXE Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: WinAppManager-EXE
+        path: dist/WinAppManager.exe
