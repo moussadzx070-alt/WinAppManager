@@ -60,19 +60,71 @@ def get_installed_apps():
     unique_apps = {app['name']: app for app in apps}.values()
     return sorted(list(unique_apps), key=lambda x: x['name'].lower())
 
+def convert_to_silent_cmd(cmd):
+    """
+    دالة ذكية لتحويل أمر الحذف العادي إلى أمر صامت مخفي تماماً
+    بناءً على نوع حزمة التثبيت المستخدمة للبرنامج.
+    """
+    if not cmd:
+        return ""
+    
+    cmd_lower = cmd.lower()
+    
+    # 1. إذا كان البرنامج عبارة عن حزمة نظام ويندوز القياسية (MSI)
+    if "msiexec" in cmd_lower:
+        # تحويل خيار التثبيت /I إلى حذف /X إن وجد، وإضافة خيارات الصمت المطلق
+        if "/i" in cmd_lower:
+            cmd = cmd.replace("/I", "/X").replace("/i", "/x")
+        if "/qn" not in cmd_lower:
+            cmd += " /qn /norestart"
+        return cmd
+        
+    # 2. إذا كان المثبت من نوع Inno Setup (مشهور جداً وينتج ملفات unins000.exe)
+    if "unins000" in cmd_lower:
+        if "/verysilent" not in cmd_lower:
+            cmd += " /VERYSILENT /SUPPRESSMSGBOXES /NORESTART"
+        return cmd
+        
+    # 3. إذا كان المثبت من نوع Nullsoft (NSIS) (ينتج ملفات uninstall.exe الافتراضية)
+    if "uninstall.exe" in cmd_lower or "uninst.exe" in cmd_lower:
+        if "/s" not in cmd_lower:
+            cmd += " /S"
+        return cmd
+        
+    # 4. محاولة عامة حذرة للمثبتات الأخرى (مثل Advanced Installer أو InstallShield)
+    if "/s" not in cmd_lower and "/silent" not in cmd_lower and "/q" not in cmd_lower:
+        if "setup" in cmd_lower:
+            cmd += " /s /v/qn"
+        else:
+            cmd += " /S" # إضافة علامة الحذف الصامت العامة القياسية
+            
+    return cmd
+
 def uninstall_and_deep_clean(app_data):
-    # 1. تنفيذ أمر الإزالة العادي أولاً
+    raw_cmd = app_data['uninstall_cmd']
+    
+    # تحويل الأمر ليعمل في الخلفية بدون نوافذ Next
+    silent_cmd = convert_to_silent_cmd(raw_cmd)
+    
+    # 1. تنفيذ أمر الإزالة الصامت في الخلفية
     try:
-        process = subprocess.Popen(app_data['uninstall_cmd'], shell=True)
-        # ننتظر قليلاً ليعمل ملف الإزالة
-        time.sleep(3) 
+        # تشغيل العملية مع إخفاء نافذة الـ CMD تماماً (CREATE_NO_WINDOW)
+        process = subprocess.Popen(
+            silent_cmd, 
+            shell=True, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.PIPE,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        )
+        # ننتظر حتى ينتهي الحذف الصامت تماماً (بحد أقصى 20 ثانية) لكي لا نقوم بالمسح العميق والملفات لا تزال قيد الاستخدام
+        process.wait(timeout=20) 
     except Exception as e:
-        print(f"Error executing uninstaller: {e}")
+        print(f"Error executing silent uninstaller: {e}")
 
     app_name = app_data['name']
     install_loc = app_data['install_location']
 
-    # 2. تنظيف مسار التثبيت بقوة (إذا كان آمناً ومحدداً)
+    # 2. تنظيف مسار التثبيت المتبقي بقوة بصلاحيات الأدمن
     if install_loc and os.path.exists(install_loc):
         if len(install_loc) > 10 and app_name.split()[0].lower() in install_loc.lower():
             try:
@@ -80,7 +132,7 @@ def uninstall_and_deep_clean(app_data):
             except:
                 pass
 
-    # 3. تنظيف الداتا من AppData
+    # 3. تنظيف الداتا المتبقية من مجلدات النظام المخفية AppData (Local / Roaming)
     appdata_paths = [os.environ.get('APPDATA'), os.environ.get('LOCALAPPDATA')]
     for path in appdata_paths:
         if path:
@@ -91,7 +143,7 @@ def uninstall_and_deep_clean(app_data):
                 except:
                     pass
 
-    # 4. تنظيف اختصارات سطح المكتب
+    # 4. تنظيف اختصارات سطح المكتب نهائياً
     desktop = os.path.join(os.environ.get('USERPROFILE', ''), 'Desktop')
     if os.path.exists(desktop):
         for file in os.listdir(desktop):
